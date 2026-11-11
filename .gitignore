@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+vendor/
+dist/
+build/
+*.egg-info/
+store.db
+.env
+.DS_Store
+
+# 本插件额外排除：打包/运行期产物，不应提交源码仓库
+plugin.meta.json
+static/cache/
+_backup_*/
+debug_*.py

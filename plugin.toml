@@ -1,0 +1,38 @@
+[plugin]
+name = "QQ集成"
+description = "通过 OneBot v11（正向/反向 WebSocket，兼容 NapCat / LLOneBot / go-cqhttp / Lagrange 等任意 OneBot 后端）或 QQ 官方开放平台接入 QQ。支持多群注意力竞争、疲劳系统、动态回复缓冲、文件内容读取（文本/VLM 图片描述）、多模态输出、提示词编辑、戳一戳、表情包等功能。还会定时去 B 站刷视频（抓标题、弹幕、字幕）形成自己的见闻，聊天和主动搭话时自然地提起来；别人发来 B 站链接时也能打开看内容（含弹幕与字幕原文）再回话。断线重连后会自动和 QQ 服务端历史对账，把断网、机器休眠、协议端掉线期间漏掉的消息补回正常处理流程（另有定期对账兜底），不会再出现“断网就丢消息”。\n\n新增：本地图库（收到的图/表情包连描述一起入库、按内容去重、可按关键词检索），QQ 表情索引（商城表情走零成本 mface 指针、收藏表情按图片 md5 认一次永久复用，省钱不重复花识别费），识图服务（套用本体主模型，双键缓存跨重启复用），以及一键换 QQ 头像（居中裁方、缩到 640、换完自动反查确认落地，失败自动重试）。\n\n0.8.5 新增：群聊可以带上主人私聊的最近对话（只在主人本人在群里说话时生效，其他人一律不注入，且提示词里明确要求不得在群里复述私聊内容），解决「私聊说过的事到群里她就忘了」；同时修掉了「模型输出空消息但界面显示回复成功」的静默丢消息问题。\n\n0.8.6 修复与新增：主人在群里说话时现在会被真正认作主人（此前群消息带的是群的等级而非发言人身份，主人身份确认从未在群里生效过，跨域私聊记忆也随之被挡住）；保存连接设置后自动重启生效，不再需要手动停止再启动（此前点「启动」会被已运行状态直接忽略）；收到消息时界面日志会明确报一条「收到消息」，排查不回复时一眼可见消息到没到插件。\n\n0.8.7 新增：定时搭话——在引导里配「几点、让她做什么」（如早上说早安、晚上说晚安），到点由模型照任务自由发挥生成一句私聊发给你（提示词里会告知当前时间与星期，且明确要求不报时、不解释定时任务）。每条每天只发一次；当时没连上 QQ 会在宽限窗内重试，过期不补发；发送走完整回复管线，说的话她会记得。\n\n0.8.8 新增：私聊与群聊的记忆打通面板（引导里可开，两个独立开关）。「最近对话」把私聊刚说过的几句带进群，「长期记忆」把她长期记住你的事也带进来——后者读的是私聊主线那套 legacy 语料，按行截断到 1200 字、缓存 5 分钟，不会每句话都去翻记忆库。两者都只在你自己（插件权限名册里的 admin）在群里说话时生效，跟 QQ 群里的群主/群管理员身份无关；提示词里硬性要求不主动展开、不说细节、不把私事讲给群里其他人。两个开关各撤各的：只关掉长期记忆不会连最近聊到的几句一起丢。"
+short_description = "完整 QQ 机器人集成：OneBot v11 泛用连接 / 开放平台双通道、注意力管理、主动搭话、B 站见闻、文件内容读取、多模态交互、图库与表情包、识图、换头像"
+keywords = ["qq", "onebot", "onebot-v11", "napcat", "llonebot", "go-cqhttp", "lagrange", "qq-open-platform", "auto-reply", "chat", "attention", "fatigue", "sticker", "poke", "voice", "buffer", "file", "vlm", "forward-websocket", "reverse-websocket", "bilibili", "proactive", "gallery", "image", "avatar", "emoji", "face-index"]
+passive = true
+version = "0.8.8"
+id = "qqbetter_auto_reply"
+type = "plugin"
+entry = "plugin.plugins.qqbetter_auto_reply:QQAutoReplyPlugin"
+
+[plugin.author]
+name = "manbo"
+
+[plugin.sdk]
+recommended = ">=0.1.0,<0.2.0"
+supported = ">=0.1.0,<0.3.0"
+
+[plugin.i18n]
+default_locale = "zh-CN"
+locales_dir = "i18n"
+
+[plugin.store]
+enabled = false
+
+[plugin.ui]
+enabled = true
+
+[[plugin.ui.panel]]
+id = "main"
+title = "Hello QQ"
+entry = "static/index.html"
+context = "qqbetter_auto_reply"
+permissions = ["state:read", "action:call"]
+
+[plugin_runtime]
+enabled = true
+auto_start = false

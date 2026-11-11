@@ -1,0 +1,4 @@
+[project]
+name = "qqbetter_auto_reply"
+version = "0.8.3"
+dependencies = []
