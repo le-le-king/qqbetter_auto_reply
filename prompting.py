@@ -276,6 +276,7 @@ class QQAutoReplyPromptingMixin:
         login_status: str = "offline",
         login_self_id: str | None = None,
         login_nickname: str | None = None,
+        speaker_roster_level: str | None = None,
     ) -> QQInstructionBundle:
         return await self.session_instruction_service.build_session_instructions(
             her_name=her_name,
@@ -297,6 +298,7 @@ class QQAutoReplyPromptingMixin:
             login_status=login_status,
             login_self_id=login_self_id,
             login_nickname=login_nickname,
+            speaker_roster_level=speaker_roster_level,
         )
 
     async def _generate_reply_fallback_direct_llm(

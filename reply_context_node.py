@@ -374,6 +374,19 @@ class QQReplyContextNode:
         address_user_by_name = effective_group_scene_mode == "directed_user"
         shared_group_session = is_group and effective_group_scene_mode == "shared_context"
         effective_group_facing = group_facing or effective_group_scene_mode == "group_collective"
+        # 发言人的名册真实档位（群轮、非合成轮、有接收章时才有值）：指令层
+        # 的 trusted 身份确认段用它门控，而不用 permission_level——后者对
+        # 信任群里的名册外发言人仍是群等级 "trusted"，会把路人误认成熟人。
+        speaker_roster_level = None
+        if (
+            is_group
+            and not is_synthetic_source(source_kind)
+            and group_speaker_permission_level_at_receipt is not None
+        ):
+            speaker_roster_level = (
+                str(group_speaker_permission_level_at_receipt).strip().lower()
+                or None
+            )
         instruction_bundle = await self.plugin._build_qq_session_instructions(
             her_name=her_name,
             master_name=master_name,
@@ -394,6 +407,7 @@ class QQReplyContextNode:
             login_status=login_status,
             login_self_id=login_self_id,
             login_nickname=login_nickname,
+            speaker_roster_level=speaker_roster_level,
         )
         system_prompt = instruction_bundle.system_prompt
         core_memory_text = instruction_bundle.core_memory_text

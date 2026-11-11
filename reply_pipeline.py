@@ -157,13 +157,22 @@ class QQReplyPipelineRunner:
         # 后者仍由 cross_domain_owner_memory 单独门控）。
         # 合成轮（buffer 合并/主动搭话/入群欢迎）的 sender_id 只是占位符，
         # 不做管理员覆盖；旁路调用者没盖发言人章（None）时维持旧行为。
+        # trusted 同理提升（0.8.9）：此前只有主人被纠正，名册里的信任用户
+        # 在群里仍按群等级映射成「开放群聊用户/普通用户」，提示词等于告诉
+        # 模型对方是路人。名册外/普通档的发言人维持群等级——路人在开放群
+        # 显示「开放群聊用户」语义仍对；「信任群里的路人会不会被误认成熟
+        # 人」由指令层的身份确认段按接收章单独门控（见
+        # _build_group_scene_section 的 speaker_roster_level），不在这里放宽。
         effective_permission = decision.permission_level
+        speaker_at_receipt = str(
+            getattr(request, "group_speaker_permission_level_at_receipt", None) or ""
+        ).strip().lower()
         if (
             request.is_group
             and not is_synthetic_source(getattr(request, "source_kind", ""))
-            and str(getattr(request, "group_speaker_permission_level_at_receipt", None) or "") == "admin"
+            and speaker_at_receipt in ("admin", "trusted")
         ):
-            effective_permission = "admin"
+            effective_permission = speaker_at_receipt
         return await self.plugin.reply_context_node.build(
             message=request.message_text,
             permission_level=(
