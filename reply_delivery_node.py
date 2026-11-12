@@ -116,6 +116,16 @@ class QQReplyDeliveryNode:
                     self.plugin.logger.warning(
                         "Ark 卡片块没有投递实现，未发送（记忆按未投递处理）"
                     )
+                else:
+                    # 空文本块（模型输出被后处理剥空/只剩标签残骸）：原先
+                    # 静默跳过，整条计划都是空块时表现为 delivered=False 且
+                    # 零日志，事后无法区分「模型没给正文」和「连接失败」。
+                    # 留痕即可，投递判定不变。
+                    self.plugin.logger.warning(
+                        "文本块内容为空，跳过该块 "
+                        f"(poke={bool(block.poke)} sticker={bool(block.sticker)} "
+                        f"record={bool(block.record)} keyboard={bool(block.keyboard)})"
+                    )
                 continue
             if i == 0:
                 first_text = text

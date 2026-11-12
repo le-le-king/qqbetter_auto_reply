@@ -139,12 +139,7 @@ class QQVoiceReplyService:
         if not normalized_text:
             raise RuntimeError("语音合成文本不能为空")
         try:
-            from main_logic.tts_client.workers.free import (
-                _adjust_free_tts_url,
-                _build_step_tts_create_data,
-            )
             from utils.config_manager import get_config_manager
-            from utils.tts.providers.stepfun import STEPFUN_TTS_DEFAULT_VOICE
 
             config_manager = get_config_manager()
 
@@ -246,6 +241,22 @@ class QQVoiceReplyService:
 
             free_voice_ids = set((get_free_voices() or {}).values())
             if voice_id in free_voice_ids:
+                # 宿主机私有模块只在免费线路里导入：这两个是宿主内部 API，
+                # 不同宿主版本可能改名/挪位置。放在函数顶部会让不用免费音色
+                # 的用户（dashscope/mimo/minimax/gemini 线路）也被 ImportError
+                # 连坐，整个语音回复直接失败。
+                try:
+                    from main_logic.tts_client.workers.free import (
+                        _adjust_free_tts_url,
+                        _build_step_tts_create_data,
+                    )
+                    from utils.tts.providers.stepfun import STEPFUN_TTS_DEFAULT_VOICE
+                except (ImportError, ModuleNotFoundError) as import_exc:
+                    raise RuntimeError(
+                        f"当前宿主版本未提供免费 TTS 内部模块（{import_exc}），"
+                        "QQ 语音回复无法使用免费音色；请升级宿主或改用自配 TTS"
+                    ) from import_exc
+                logger.info(f"正在为音色 {voice_id} 生成回复语音...（免费线路，文本 {len(text)} 字符）")
                 tts_url = _adjust_free_tts_url("wss://www.lanlan.tech/tts")
                 headers = {"Authorization": f"Bearer {audio_api_key or ''}"}
                 lang_hint = None
@@ -346,9 +357,11 @@ class QQVoiceReplyService:
         normalized_text = str(text or "").strip()
         if not normalized_text:
             raise RuntimeError("语音合成文本不能为空")
-        voice_id = await self.get_current_voice_id()
-        if not voice_id:
-            raise RuntimeError("当前猫娘未配置 voice_id，无法发送语音")
+        # voice_id 不在这里设硬闸：synthesize_reply_voice_audio 对「角色没配
+        # voice_id」的情况会退回宿主机实时语音 provider（gemini/minimax 等
+        # native 音色不需要 voice_id），两者都没有时才在那里抛错、且错误信息
+        # 更明确。提前拦截会把本可回退成功的用户直接锁死——现象是切到语音
+        # 输出后永远发不出语音、只回退文本。
         await self.cleanup_voice_output_dir()
         audio_bytes, mime_type = await self.synthesize_reply_voice_audio(normalized_text)
         if not audio_bytes:
@@ -392,8 +405,9 @@ class QQVoiceReplyService:
                     return self._confirm_send(
                         await self.plugin.qq_client.send_private_record(target_qq, file_uri),
                     ) or text_ok
-                except Exception:
+                except Exception as exc:
                     self.plugin.logger.warning("QQ both-语音私聊发送失败，已保留文本", exc_info=True)
+                    self.plugin._emit_log("WARN", f"复合模式语音发送失败，仅保留文本：{exc}")
                     return text_ok
             else:
                 # 无 <record> 标签 → 纯文字
@@ -411,18 +425,21 @@ class QQVoiceReplyService:
                 # 开放平台失败吞异常返回 None（不 raise）：未确认同样要走
                 # 文本回退，不能把"没发出去"当结论直接返回。
                 self.plugin.logger.warning("QQ 纯语音私聊发送未确认，回退文本")
+                self.plugin._emit_log("WARN", "语音已发出但未获服务端确认，已回退文本（检查 NapCat/语音通道状态）")
                 return self._confirm_send(
                     await self.plugin.qq_client.send_message(target_qq, normalized_text)
                 )
             return False
-        except Exception:
+        except Exception as exc:
             if mode == "voice" and fallback_to_text_on_voice_failure:
                 self.plugin.logger.warning("QQ 纯语音私聊发送失败，回退文本", exc_info=True)
+                self.plugin._emit_log("WARN", f"语音合成/发送失败，已回退文本：{exc}")
                 return self._confirm_send(
                     await self.plugin.qq_client.send_message(target_qq, normalized_text)
                 )
             if mode == "both" and normalized_text:
                 self.plugin.logger.warning("QQ 复合私聊中的语音发送失败，已保留文本", exc_info=True)
+                self.plugin._emit_log("WARN", f"复合模式语音发送失败，仅保留文本：{exc}")
                 return False
             raise
 
@@ -453,8 +470,9 @@ class QQVoiceReplyService:
                     return self._confirm_send(
                         await self.plugin.qq_client.send_group_record(group_id, file_uri, reply_message_id=reply_message_id, at_user_id=at_user_id),
                     ) or text_ok
-                except Exception:
+                except Exception as exc:
                     self.plugin.logger.warning("QQ both-语音群聊发送失败，已保留文本", exc_info=True)
+                    self.plugin._emit_log("WARN", f"复合模式群聊语音发送失败，仅保留文本：{exc}")
                     return text_ok
             else:
                 return self._confirm_send(
@@ -472,15 +490,17 @@ class QQVoiceReplyService:
                 # 回退的这条同样要带 keyboard——否则语音一失败，用户拿到的
                 # 是一句"想看哪个？"却一个按钮都没有。
                 self.plugin.logger.warning("QQ 纯语音群聊发送未确认，回退文本")
+                self.plugin._emit_log("WARN", "群语音已发出但未获服务端确认，已回退文本（检查 NapCat/语音通道状态）")
                 return self._confirm_send(
                     await self.plugin.qq_client.send_group_message_segments(
                         group_id, text_segments, keyboard=keyboard,
                     ),
                 )
             return False
-        except Exception:
+        except Exception as exc:
             if mode == "voice" and fallback_to_text_on_voice_failure:
                 self.plugin.logger.warning("QQ 纯语音群聊发送失败，回退文本", exc_info=True)
+                self.plugin._emit_log("WARN", f"群语音合成/发送失败，已回退文本：{exc}")
                 return self._confirm_send(
                     await self.plugin.qq_client.send_group_message_segments(
                         group_id, text_segments, keyboard=keyboard,
@@ -488,5 +508,6 @@ class QQVoiceReplyService:
                 )
             if mode == "both":
                 self.plugin.logger.warning("QQ 复合群聊中的语音发送失败，已保留文本", exc_info=True)
+                self.plugin._emit_log("WARN", f"复合模式群聊语音发送失败，仅保留文本：{exc}")
                 return False
             raise
