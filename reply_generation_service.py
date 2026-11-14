@@ -19,6 +19,7 @@ from .pipeline_models import (
     QQReplyContext,
     is_synthetic_source,
 )
+from .qzone_service import QZONE_TOOL_NAME
 from .search_tool_service import (
     SEARCH_TOOL_HTTP_TIMEOUT_SECONDS,
     SEARCH_TOOL_NAME,
@@ -640,6 +641,34 @@ class QQReplyGenerationService:
                     f"set_avatar 工具构建失败（本轮换不了头像）: {exc}"
                 )
 
+        # QQ 空间：只给她一把钥匙，不给她日程表。发不发、什么时候发是她
+        # 自己的决定，所以这里既不排定时任务、也不在任何事件上自动触发。
+        qzone_service = getattr(self.plugin, "qzone_service", None)
+        post_qzone_handler = None
+        if qzone_service is not None:
+            try:
+                tools.append(qzone_service.build_post_definition())
+                post_qzone_handler = self._build_qzone_post_handler(qzone_service)
+                # 宿主重启后第一轮挂载时自检一次（每进程一次），把「凭据」
+                # 和「宿主进程到空间接口的连通性」各写一行日志。没有这条，
+                # 发表失败时日志里只剩一个 get_cookies，无从判断断在哪。
+                if not getattr(qzone_service, "_self_check_attempted", False):
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(qzone_service.ensure_self_check_once())
+                    except RuntimeError:
+                        # 这里没有运行中的事件循环（工具定义可能在协程外构建）。
+                        # 不静默吞：发表前还会再兜底跑一次，但先留一条日志，
+                        # 免得以后又被误判成「自检没实现」。
+                        self.plugin.logger.info(
+                            "空间自检未能在挂载阶段调度（无运行中的事件循环），"
+                            "将在首次发表前执行"
+                        )
+            except Exception as exc:
+                self.plugin.logger.warning(
+                    f"post_qzone 工具构建失败（本轮发不了空间）: {exc}"
+                )
+
         if not tools:
             self.plugin.logger.warning("[工具诊断] 本轮一个工具都没构建出来")
             return False
@@ -667,6 +696,8 @@ class QQReplyGenerationService:
                 return await browse_gallery_handler(tool_call)
             if name == AVATAR_TOOL_NAME and set_avatar_handler is not None:
                 return await set_avatar_handler(tool_call)
+            if name == QZONE_TOOL_NAME and post_qzone_handler is not None:
+                return await post_qzone_handler(tool_call)
             if recall_handler is not None:
                 return await recall_handler(tool_call)
             return ToolResult(
@@ -960,6 +991,49 @@ class QQReplyGenerationService:
             )
 
         return _handle_avatar_tool
+
+    def _build_qzone_post_handler(self, qzone_service: Any):
+        """发表说说。成败都要如实回给她——说"发了"但其实没发出去，
+        是比不发更糟的事：她会接着跟人聊"我刚发了个说说"。
+        """
+
+        async def _handle_qzone_tool(tool_call: Any) -> ToolResult:
+            name = getattr(tool_call, "name", "") or QZONE_TOOL_NAME
+            arguments = getattr(tool_call, "arguments", None) or {}
+            content = str(arguments.get("content") or "").strip()
+            if not content:
+                return ToolResult(
+                    call_id=getattr(tool_call, "call_id", "") or "",
+                    name=name,
+                    output="（内容是空的，没发。想发就把想说的话写进 content）",
+                )
+            try:
+                result = await qzone_service.publish(content)
+            except Exception as exc:
+                self.plugin.logger.warning(f"post_qzone 执行失败: {exc}")
+                result = {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
+            if result.get("ok") and result.get("verified"):
+                output = (
+                    "发出去了，已经落到你的空间里。"
+                    "不用向任何人汇报，也别在聊天里贴一遍内容。"
+                )
+            elif result.get("ok"):
+                output = (
+                    "接口回了成功，但我回读没看到这条落地，可能还在同步。"
+                    "先别再说自己发了说说，也别立刻再发一条。"
+                )
+            else:
+                output = (
+                    f"没发出去：{result.get('reason') or '未知原因'}。"
+                    "别跟任何人说你发了说说。"
+                )
+            return ToolResult(
+                call_id=getattr(tool_call, "call_id", "") or "",
+                name=name,
+                output=output,
+            )
+
+        return _handle_qzone_tool
 
     def _build_recall_tool_handler(
         self, *, context: Any, consent_before: dict,

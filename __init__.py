@@ -57,6 +57,7 @@ from .proactive_private_service import QQProactivePrivateService
 from .prompt_builder import QQPromptBuilder
 from .prompting import QQAutoReplyPromptingMixin
 from .qq_client import QQClient
+from .qzone_service import QZoneService
 from .relay_service import QQRelayService
 from .reply_buffer_service import QQReplyBufferService
 from .reply_context_node import QQReplyContextNode
@@ -179,6 +180,10 @@ class QQAutoReplyPlugin(QQAutoReplySessionMixin, QQAutoReplyPromptingMixin, QQAu
         # 图库：把她见过的图和表情包连描述一起收进 Q 盘，供检索、当头像。
         # 和 sticker_service 的分工：那个管「她要发什么」，这个管「她见过什么」。
         self.gallery_service = QQGalleryService(self)
+        # QQ 空间：她自己想发就发的一条对外通道，工具名 post_qzone。
+        # 只挂工具、不排定时任务——发不发、什么时候发是她的事，
+        # 按日程逼出来的说说一眼就能看出是任务。
+        self.qzone_service = QZoneService(self)
         self.handler_runtime_service = QQHandlerRuntimeService(self)
         self.message_dispatcher = QQMessageDispatcher(self)
         self.session_bootstrap_service = QQSessionBootstrapService(self)
